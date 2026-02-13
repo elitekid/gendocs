@@ -1,0 +1,50 @@
+# Build output
+output/
+
+# Dependencies
+node_modules/
+
+# IDE
+.idea/
+
+# User workspace (local only)
+source/*
+!source/.gitkeep
+doc-configs/*
+!doc-configs/.gitkeep
+
+# Legacy converters
+converters/
+
+# User diagrams & generated images
+diagrams/*.py
+diagrams/*.png
+
+# Company assets
+assets/ROAD.png
+
+# Regression test baselines (user-specific)
+tests/golden/*
+!tests/golden/.gitkeep
+
+# Pattern DB (generated from user docs)
+lib/patterns.json
+
+# Test input files
+test-input/
+
+# Company example (kept locally)
+examples/api-spec/
+examples/hipass-batch/
+examples/hipass-batch-from-docx/
+
+# Legacy prototype (contains hardcoded company data)
+tools/convert-to-docx.js
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Windows artifacts
+nul
+__pycache__/
+*.pyc
