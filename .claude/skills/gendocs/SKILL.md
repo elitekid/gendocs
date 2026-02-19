@@ -528,3 +528,39 @@ node tools/extract-patterns.js --audit    # 출처 분포 + 다양성 메트릭 
 재검증: python -X utf8 tools/validate-docx.py output/{파일명}.docx
 회귀:   node tools/regression-test.js
 ```
+
+---
+
+## 진단 모드 (선택)
+
+문서 생성 후 전체 파이프라인 상태를 한눈에 확인하고 싶을 때 사용합니다.
+
+```bash
+node tools/pipeline-audit.js doc-configs/{파일명}.json              # 단일 진단
+node tools/pipeline-audit.js doc-configs/{파일명}.json --json       # JSON 출력
+node tools/pipeline-audit.js doc-configs/{파일명}.json --skip-convert  # 기존 DOCX
+node tools/pipeline-audit.js --batch --skip-convert                 # 전체 진단
+```
+
+**사용 시점**:
+- 생성 완료 후 전체 품질 상태를 확인할 때
+- 배치 생성 후 문제 문서를 빠르게 식별할 때
+- 이슈의 근본 원인(source MD / doc-config / converter)을 추적할 때
+
+**Health 판정**:
+
+| 판정 | 조건 | 설명 |
+|------|------|------|
+| EXCELLENT | 점수 9.5+, WARN 0 | 최적 상태 |
+| GOOD | 점수 8.0+, WARN ≤ 2 | 양호 |
+| NEEDS_FIX | 점수 < 8.0 또는 WARN > 2 | 수정 필요 |
+| BROKEN | lint CRITICAL 또는 변환 실패 | 소스 수정 필수 |
+
+**근본 원인 4계층**:
+
+| 계층 | 의미 | 수정 대상 |
+|------|------|-----------|
+| source | MD 원본 문제 | source/ MD 파일 |
+| config | 변환 설정 문제 | doc-configs/ JSON |
+| converter | 변환 엔진 버그 | lib/converter-core.js |
+| info | 참고용 (수정 불필요) | 시뮬레이션 추정치 |

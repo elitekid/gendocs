@@ -202,6 +202,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 다차원 품질 점수 | **완료** | `tools/score-docx.js` — 5차원 1-10 점수 + 시계열 추적 |
 | 패턴 붕괴 방지 | **완료** | `extract-patterns.js --audit` — 출처 추적 + 다양성 메트릭 |
 | lint-md.py 확장 | **완료** | 5개 검사 추가 (중첩 불릿, 8+ 컬럼, 이미지 참조, 언어 태그, 섹션 균형) |
+| 파이프라인 진단 | **완료** | `tools/pipeline-audit.js` — 5단계 통합 진단 + 근본 원인 매핑 |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -292,6 +293,7 @@ gendocs/
     ├── create-baselines.js          ← [v0.3] baseline 생성
     ├── extract-patterns.js          ← [v0.3] 성공 패턴 추출 → lib/patterns.json
     ├── score-docx.js                ← [v0.4] 다차원 품질 점수 CLI (단일/배치)
+    ├── pipeline-audit.js            ← [v0.5] 파이프라인 진단 (5단계 통합 + 근본 원인)
     ├── create-score-baselines.js    ← [v0.4] 점수 baseline 생성
     ├── check-rules.js               ← [v0.3] 규칙 충돌 감지
     ├── review-docx.py               ← [v0.3] AI 셀프리뷰 (너비 불균형, 콘텐츠 정합성, 품질 검사)
@@ -794,6 +796,39 @@ node tools/extract-patterns.js --audit      # + 다양성 감사 리포트 출�
 - `/gendocs` 스킬로 생성 → `"createdBy": "ai"`
 - 사용자가 수작업 작성 → `"createdBy": "human"`
 - 필드 없음 → `"unknown"` (기존 doc-config와 호환)
+
+### 파이프라인 진단 (Pipeline Diagnostic, v0.5)
+
+MD→config→변환→DOCX 전체 체인을 5단계로 진단하고, 이슈의 근본 원인 레이어(source/config/converter/info)를 매핑한다.
+
+```bash
+node tools/pipeline-audit.js doc-configs/문서.json              # 단일 진단
+node tools/pipeline-audit.js doc-configs/문서.json --json       # JSON 출력
+node tools/pipeline-audit.js doc-configs/문서.json --skip-convert  # 기존 DOCX 사용
+node tools/pipeline-audit.js --batch                            # 전체 진단
+node tools/pipeline-audit.js --batch --skip-convert             # 전체, 기존 DOCX
+```
+
+**5단계 파이프라인**:
+
+| 단계 | 도구 | 설명 |
+|------|------|------|
+| ① lint-md | `tools/lint-md.py` | MD 구조 린트 (CRITICAL → ② 스킵) |
+| ② convert | `lib/convert.js` | DOCX 변환 (또는 skip) |
+| ③ validate | `tools/validate-docx.py` | 레이아웃 검증 |
+| ④ review | `tools/review-docx.py` | AI 셀프리뷰 |
+| ⑤ score | `lib/scoring.js` | 다차원 품질 점수 |
+
+**Health 판정**:
+
+| 판정 | 조건 |
+|------|------|
+| EXCELLENT | 점수 9.5+, WARN 0건 |
+| GOOD | 점수 8.0+, WARN ≤ 2건 |
+| NEEDS_FIX | 점수 < 8.0 또는 WARN > 2건 |
+| BROKEN | lint CRITICAL > 0 또는 변환 실패 |
+
+**근본 원인 4계층**: source(MD 문제) → config(doc-config 설정) → converter(변환 엔진) → info(참고용)
 
 ---
 

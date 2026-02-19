@@ -214,7 +214,7 @@ gendocs/
 - [ ] 기존 29개 source MD에서 새 린트 규칙 false positive 없음
 - [ ] 알려진 문제를 정확히 감지하는지 테스트 케이스 추가
 
-#### Sprint 6: 파이프라인 진단 모드
+#### Sprint 6: 파이프라인 진단 모드 — 완료
 
 **목표**: MD→config→변환→DOCX 전체 체인 평가로 근본 원인 추적
 **근거**: Agent-as-a-Judge (2025), MAPE-K 루프 (Self-Healing Survey)
@@ -224,11 +224,11 @@ gendocs/
 | pipeline-audit.js | `tools/pipeline-audit.js` (신규) | lint + convert + validate + review + score 통합 실행 |
 | 단계별 점수 | pipeline-audit.js | 각 단계 결과를 개별 점수화 |
 | 근본 원인 매핑 | pipeline-audit.js | 레이아웃 WARN → 원인이 MD/config/변환 중 어디인지 |
-| SKILL.md 통합 | SKILL.md | `/gendocs --audit` 옵션으로 진단 모드 |
+| SKILL.md 통합 | SKILL.md | "진단 모드" 섹션 추가 |
 
 검증 게이트:
-- [ ] 기존 29개 문서에서 pipeline-audit 실행 가능
-- [ ] 알려진 WARN의 근본 원인이 올바르게 매핑되는지 확인
+- [x] 117개 문서에서 pipeline-audit 실행 가능 (EXCELLENT 101, GOOD 8, BROKEN 8)
+- [x] 알려진 WARN의 근본 원인이 올바르게 매핑되는지 확인
 
 ---
 
