@@ -32,6 +32,7 @@ lib/patterns.json
 
 # Test input files
 test-input/
+test-sources/
 
 # Company example (kept locally)
 examples/api-spec/
