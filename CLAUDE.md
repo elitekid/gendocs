@@ -199,6 +199,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 시각적 검증 | **완료** | `tools/visual-verify.py` (LibreOffice → PDF → 이미지, 선택적) |
 | 경험 기억 (Reflexion) | **완료** | `lib/reflections.json` — 교정 경험 저장·재활용, 반복 FIX 감소 |
 | 조기 종료 + 델타 추적 | **완료** | 6단계 루프 개선: PLATEAU/OSCILLATION 감지, 최적 결과 보존 |
+| 다차원 품질 점수 | **완료** | `tools/score-docx.js` — 5차원 1-10 점수 + 시계열 추적 |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -237,6 +238,7 @@ gendocs/
 ├── lib/                             ← [v0.2] Generic Converter 엔진
 │   ├── converter-core.js            ← 공통 변환 로직 (파싱, 너비 계산, 변환, 빌드)
 │   ├── convert.js                   ← 진입점: node lib/convert.js <config.json>
+│   ├── scoring.js                   ← [v0.4] 다차원 품질 점수 계산 (순수 함수 모듈)
 │   ├── patterns.json                ← [v0.3] 공유 패턴 DB (tableWidths common/byDocType)
 │   └── reflections.json             ← [v0.4] 에피소딕 메모리 (교정 경험 저장)
 │
@@ -278,7 +280,8 @@ gendocs/
 │       └── doc-config.json
 │
 ├── tests/                           ← [v0.3] 회귀 테스트
-│   └── golden/                      ← baseline 스냅샷 (문서별 stats JSON)
+│   ├── golden/                      ← baseline 스냅샷 (문서별 stats JSON)
+│   └── scores/                      ← [v0.4] 품질 점수 히스토리 (문서별 시계열)
 │
 └── tools/                           ← 검증·디버그·유틸리티
     ├── validate-docx.py             ← [핵심] DOCX 구조 검증 + 레이아웃 분석 (--json 지원)
@@ -286,6 +289,8 @@ gendocs/
     ├── regression-test.js           ← [v0.3] 회귀 테스트 (baseline 비교)
     ├── create-baselines.js          ← [v0.3] baseline 생성
     ├── extract-patterns.js          ← [v0.3] 성공 패턴 추출 → lib/patterns.json
+    ├── score-docx.js                ← [v0.4] 다차원 품질 점수 CLI (단일/배치)
+    ├── create-score-baselines.js    ← [v0.4] 점수 baseline 생성
     ├── check-rules.js               ← [v0.3] 규칙 충돌 감지
     ├── review-docx.py               ← [v0.3] AI 셀프리뷰 (너비 불균형, 콘텐츠 정합성, 품질 검사)
     ├── lint-md.py                   ← [v0.3] MD 구조 린트 (변경이력 용어, 구분선, 코드블록 균형, TOC)
@@ -728,6 +733,39 @@ python -X utf8 tools/visual-verify.py output/문서.docx --save-images
 - **STOP_MAX**: 4회 도달 → 기존과 동일
 - **최적 복원**: 조기 종료 시 최소 WARN 반복의 doc-config로 복원 후 재변환
 - **Reflexion 기록**: 조기 종료 사유 + WARN 추이를 reflections.json에 기록
+
+### 다차원 품질 점수 (v0.4)
+
+문서 품질을 5차원 1-10 점수로 정량화한다. 기존 PASS/FIX/SKIP/ROLLBACK 판정은 그대로 유지하며, 점수는 보완 정보.
+
+**5차원 + 가중치**:
+
+| 차원 | 가중치 | 데이터 소스 | 의미 |
+|------|--------|-------------|------|
+| content | 0.30 | review-docx `contentFidelity` | 소스 대비 콘텐츠 충실도 |
+| layout | 0.25 | validate-docx `issues[]` + `pages[]` | 페이지 배치 품질 |
+| table | 0.20 | review-docx `tableWidths` + `tableReadability` | 테이블 가독성 |
+| code | 0.15 | review-docx `codeIntegrity` | 코드블록 무결성 |
+| structure | 0.10 | validate `hasHeader/Footer` + review `headingStructure` | 구조 완성도 |
+
+**CLI 사용법**:
+
+```bash
+node tools/score-docx.js doc-configs/문서.json                # 단일 점수
+node tools/score-docx.js doc-configs/문서.json --save          # 점수 + tests/scores/ 저장
+node tools/score-docx.js --batch                               # 전체 문서
+node tools/score-docx.js --batch --save                        # 전체 + 저장
+node tools/score-docx.js --batch --skip-convert                # 기존 DOCX 사용 (빠름)
+```
+
+**점수 히스토리**: `tests/scores/{name}.scores.json` — 시계열 추적 (trend: improving/stable/degrading)
+
+**패턴 가중치 연동**: `extract-patterns.js`가 점수 기반 tiebreak + common 승격 시 평균 7.0+ 게이트 적용
+
+**핵심 파일**:
+- `lib/scoring.js` — 점수 계산 공유 모듈 (순수 함수)
+- `tools/score-docx.js` — CLI (단일/배치)
+- `tools/create-score-baselines.js` — 점수 baseline 생성
 
 ---
 

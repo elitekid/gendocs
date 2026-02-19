@@ -378,6 +378,14 @@ review-docx.py 결과를 검토한 후, `extract-docx.py --json` 출력을 읽�
 - 주요 이슈 내용
 - 콘텐츠 검증 결과 (원본 대비 일치 여부)
 
+### 5-6. 품질 점수 (선택)
+
+변환+검증 완료 후 품질 점수를 산출합니다:
+```bash
+node tools/score-docx.js doc-configs/{파일명}.json --skip-convert
+```
+사용자에게 5차원 점수와 총점을 보고하세요.
+
 ---
 
 ## 6단계: 계층 ③ — 레이아웃 자가개선 루프 (최대 4회, 조기 종료 포함)
@@ -490,9 +498,10 @@ STOP_PLATEAU, STOP_OSCILLATION, STOP_MAX로 종료되었고 WARN이 남아있으
 output/{파일명}.docx 생성 완료
 ```
 
-변환이 성공(WARN 0)하면 패턴 DB를 갱신하세요:
+변환이 성공(WARN 0)하면 패턴 DB를 갱신하고 점수를 기록하세요:
 ```bash
 node tools/extract-patterns.js
+node tools/score-docx.js doc-configs/{파일명}.json --skip-convert --save
 ```
 
 변환 성공(WARN 0)이고 FIX 없이 통과한 경우 `lib/reflections.json`에 기록:

@@ -16,11 +16,49 @@ const path = require('path');
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DOC_CONFIGS_DIR = path.join(PROJECT_ROOT, 'doc-configs');
 const PATTERNS_PATH = path.join(PROJECT_ROOT, 'lib', 'patterns.json');
+const SCORES_DIR = path.join(PROJECT_ROOT, 'tests', 'scores');
 
 const COMMON_THRESHOLD = 3; // 3개 이상이면 common 승격
+const QUALITY_GATE = 7.0;   // common 승격 시 평균 점수 게이트
 
 function getConfigName(configPath) {
   return path.basename(configPath, '.json');
+}
+
+/**
+ * tests/scores/ 에서 점수 맵 로드
+ * @returns {{ [docName: string]: number } | null} — 점수 파일이 없으면 null
+ */
+function loadScoreMap() {
+  if (!fs.existsSync(SCORES_DIR)) return null;
+
+  const scoreFiles = fs.readdirSync(SCORES_DIR).filter(f => f.endsWith('.scores.json'));
+  if (scoreFiles.length === 0) return null;
+
+  const scoreMap = {};
+  for (const f of scoreFiles) {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(SCORES_DIR, f), 'utf-8'));
+      const name = data.docConfig || path.basename(f, '.scores.json');
+      if (data.latestOverall !== undefined) {
+        scoreMap[name] = data.latestOverall;
+      }
+    } catch (err) {
+      // 파싱 실패는 무시
+    }
+  }
+
+  return Object.keys(scoreMap).length > 0 ? scoreMap : null;
+}
+
+/**
+ * usedBy 목록의 평균 점수 계산
+ */
+function avgScore(usedBy, scoreMap) {
+  if (!scoreMap) return 0;
+  const scores = usedBy.map(name => scoreMap[name]).filter(s => s !== undefined);
+  if (scores.length === 0) return 0;
+  return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
 
 function main() {
@@ -90,19 +128,35 @@ function main() {
     console.log(`  reflections.json에서 ${widthFixes.length}개 너비 수정 기록 병합`);
   }
 
+  // 점수 맵 로드 (없으면 null — 하위 호환)
+  const scoreMap = loadScoreMap();
+  if (scoreMap) {
+    console.log(`  tests/scores/ 에서 ${Object.keys(scoreMap).length}개 문서 점수 로드`);
+  }
+
   // 분류: common vs byDocType
   const common = {};
   const byDocType = {};
 
   for (const [pattern, widthVariants] of Object.entries(patternMap)) {
-    // 가장 많이 사용된 너비를 선택
+    // 가장 많이 사용된 너비를 선택 (동일 usedBy 수일 때 점수로 tiebreak)
     const variants = Object.values(widthVariants);
-    variants.sort((a, b) => b.usedBy.length - a.usedBy.length);
+    variants.sort((a, b) => {
+      if (b.usedBy.length !== a.usedBy.length) return b.usedBy.length - a.usedBy.length;
+      return avgScore(b.usedBy, scoreMap) - avgScore(a.usedBy, scoreMap);
+    });
     const best = variants[0];
 
     if (best.usedBy.length >= COMMON_THRESHOLD) {
-      common[pattern] = best.widths;
-      console.log(`  [COMMON] "${pattern}" — ${best.usedBy.length}개 문서에서 사용`);
+      // 품질 게이트: 점수 파일이 있으면 평균 7.0 이상이어야 common 승격
+      const avg = avgScore(best.usedBy, scoreMap);
+      if (!scoreMap || avg >= QUALITY_GATE) {
+        common[pattern] = best.widths;
+        const scoreInfo = scoreMap ? ` (avg=${avg.toFixed(1)})` : '';
+        console.log(`  [COMMON] "${pattern}" — ${best.usedBy.length}개 문서에서 사용${scoreInfo}`);
+      } else {
+        console.log(`  [SKIP-COMMON] "${pattern}" avg score ${avg.toFixed(1)} < ${QUALITY_GATE}`);
+      }
     } else {
       // byDocType에 분류
       for (const variant of variants) {

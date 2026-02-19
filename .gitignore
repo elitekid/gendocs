@@ -27,6 +27,10 @@ assets/ROAD.png
 tests/golden/*
 !tests/golden/.gitkeep
 
+# Quality score history (user-specific)
+tests/scores/*
+!tests/scores/.gitkeep
+
 # Pattern DB (generated from user docs)
 lib/patterns.json
 
