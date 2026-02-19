@@ -104,17 +104,18 @@ def classify_table(tbl):
     rows = get_table_rows(tbl)
     cols = len(rows[0]) if rows else 0
 
-    # 다크 코드블록
-    if bg in ('1E1E1E', '2D2D2D', '1A1A1A'):
+    # 다크 코드블록 (all themes)
+    if bg in ('1E1E1E', '2D2D2D', '1A1A1A', '1A202C', '1B2B2B', '1E1A1C'):
         return 'code_dark'
-    # 라이트 코드블록
-    if cols == 1 and bg in ('F5F5F5', 'EAEAEA', 'F0F0F0', 'FAFAFA'):
+    # 라이트 코드블록 / JSON
+    if cols == 1 and bg in ('F5F5F5', 'EAEAEA', 'F0F0F0', 'FAFAFA',
+            'EDF2F7', 'E6F4F4', 'F5EDED', 'E9F1F8', 'F7FAFC', 'F0F9F9', 'FAF5F5', 'F5F8FC'):
         return 'code_light'
     # 정보 박스
-    if cols == 1 and bg in ('E8F0F7', 'E8F4FD'):
+    if cols == 1 and bg in ('E8F0F7', 'E8F4FD', 'EBF4FF', 'E0F5F5', 'F5EDF0', 'DEEAF6'):
         return 'info_box'
     # 경고 박스
-    if cols == 1 and bg in ('FEF6E6', 'FFF8E1', 'FFF3CD'):
+    if cols == 1 and bg in ('FEF6E6', 'FFF8E1', 'FFF3CD', 'FFFBEB', 'FFF5EB'):
         return 'warning_box'
     return 'data_table'
 

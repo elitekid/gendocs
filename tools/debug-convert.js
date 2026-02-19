@@ -1,4 +1,4 @@
-const t = require('../templates/docx/professional');
+const t = require('../templates/docx/professional')();
 const fs = require('fs');
 const path = require('path');
 
