@@ -1,13 +1,18 @@
 """
 gendocs MD 구조 린트 도구 — 변환 전 MD 파일의 구조적 이슈를 자동 검출.
 
-배치 테스트(102건)에서 발견된 반복 패턴을 자동화:
-  - 변경 이력 용어 ("초안 작성" 준수)
+11가지 구조 검사:
+  - 메타데이터 완성도
   - 구분선(---) 존재
+  - 변경 이력 용어 ("초안 작성" 준수)
   - 코드블록 균형 (열림/닫힘)
   - 목차-본문 일치
   - HTML 아티팩트
-  - 메타데이터 완성도
+  - 중첩 불릿 감지
+  - 테이블 8+ 컬럼
+  - 이미지 파일 참조 존재
+  - 코드블록 언어 태그 유효성
+  - 섹션 분량 균형
 
 사용법:
   python -X utf8 tools/lint-md.py source/문서.md
@@ -56,6 +61,21 @@ def lint_md(md_path):
 
     # === 6. HTML 아티팩트 검사 ===
     check_html_artifacts(lines, issues)
+
+    # === 7. 중첩 불릿 검사 ===
+    check_nested_bullets(lines, issues)
+
+    # === 8. 테이블 컬럼 수 검사 ===
+    check_table_column_count(lines, issues)
+
+    # === 9. 이미지 참조 검사 ===
+    check_image_references(lines, issues, md_path)
+
+    # === 10. 코드블록 언어 태그 검사 ===
+    check_code_language_tag(lines, issues)
+
+    # === 11. 섹션 분량 균형 검사 ===
+    check_section_balance(lines, issues)
 
     # 심각도별 집계
     summary = {}
@@ -342,6 +362,192 @@ def check_html_artifacts(lines, issues):
             break  # 같은 줄에서 하나만 보고
 
 
+def check_nested_bullets(lines, issues):
+    """중첩 불릿 감지 — converter가 들여쓰기를 무시하므로 구조 손실됨"""
+    in_code = False
+    in_toc = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+
+        if in_code:
+            continue
+
+        # 목차 섹션 추적 (TOC 내 들여쓰기는 정상)
+        if stripped == '## 목차':
+            in_toc = True
+            continue
+        if in_toc and (stripped.startswith('## ') or stripped == '---'):
+            in_toc = False
+        if in_toc:
+            continue
+
+        # 블록쿼트 내부 스킵
+        if stripped.startswith('>'):
+            continue
+
+        # 2+ space 또는 tab으로 시작하는 불릿/번호 리스트
+        m = re.match(r'^( {2,}|\t)[-*+] ', line) or re.match(r'^( {2,}|\t)\d+\. ', line)
+        if m:
+            issues.append({
+                'check': 'nestedBullet',
+                'severity': 'CRITICAL',
+                'line': i + 1,
+                'message': '중첩 불릿 감지 — converter가 들여쓰기를 무시하므로 테이블이나 일반 불릿으로 변환하세요',
+            })
+
+
+def check_table_column_count(lines, issues):
+    """8개 이상 컬럼 테이블 감지"""
+    in_code = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+
+        if in_code:
+            continue
+
+        # 테이블 헤더 감지: | 로 시작하고 다음 줄이 |--- 패턴
+        if stripped.startswith('|') and i + 1 < len(lines):
+            next_stripped = lines[i + 1].strip()
+            if re.match(r'^\|[\s\-:|]+\|$', next_stripped):
+                cols = stripped.strip('|').split('|')
+                col_count = len(cols)
+                if col_count >= 8:
+                    issues.append({
+                        'check': 'tableColumnCount',
+                        'severity': 'WARN',
+                        'line': i + 1,
+                        'message': f'테이블 컬럼 {col_count}개 — 가로 레이아웃에서도 가독성이 저하됩니다',
+                        'columnCount': col_count,
+                    })
+
+
+def check_image_references(lines, issues, md_path):
+    """이미지 파일 참조 존재 여부 검사"""
+    in_code = False
+
+    # 프로젝트 루트 탐색: md_path에서 위로 올라가며 CLAUDE.md 찾기
+    project_root = None
+    search_dir = os.path.dirname(os.path.abspath(md_path))
+    for _ in range(10):  # 최대 10단계
+        if os.path.exists(os.path.join(search_dir, 'CLAUDE.md')):
+            project_root = search_dir
+            break
+        parent = os.path.dirname(search_dir)
+        if parent == search_dir:
+            break
+        search_dir = parent
+
+    md_dir = os.path.dirname(os.path.abspath(md_path))
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+
+        if in_code:
+            continue
+
+        # 이미지 참조 추출
+        refs = re.findall(r'!\[.*?\]\((.+?)\)', line)
+        for ref in refs:
+            # URL 스킵
+            if ref.startswith('http://') or ref.startswith('https://'):
+                continue
+
+            # 쿼리스트링/타이틀 제거
+            path = ref.split('?')[0].split('"')[0].split("'")[0].strip()
+            if not path:
+                continue
+
+            # 경로 해석: ① MD 파일 기준 상대 → ② 프로젝트 루트 기준 상대
+            resolved = os.path.normpath(os.path.join(md_dir, path))
+            if os.path.exists(resolved):
+                continue
+
+            if project_root:
+                resolved_root = os.path.normpath(os.path.join(project_root, path))
+                if os.path.exists(resolved_root):
+                    continue
+
+            issues.append({
+                'check': 'imageReference',
+                'severity': 'CRITICAL',
+                'line': i + 1,
+                'message': f'이미지 파일 없음: "{path}"',
+                'path': path,
+            })
+
+
+def check_code_language_tag(lines, issues):
+    """코드블록 언어 태그 유효성 검사"""
+    in_code = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        if stripped.startswith('```'):
+            if not in_code:
+                in_code = True
+                # 언어 태그 추출
+                m = re.match(r'^`{3,}([\w.+#-]+)', stripped)
+                if m:
+                    tag = m.group(1)
+                    if tag.lower() not in KNOWN_LANGUAGES:
+                        issues.append({
+                            'check': 'codeLanguageTag',
+                            'severity': 'MINOR',
+                            'line': i + 1,
+                            'message': f'알려지지 않은 코드블록 언어 태그: "{tag}"',
+                            'tag': tag,
+                        })
+            else:
+                in_code = False
+
+
+def check_section_balance(lines, issues):
+    """H2 섹션 간 분량 불균형 감지"""
+    # H2 위치 수집 (목차, 변경 이력 제외)
+    h2_sections = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('## ') and not stripped.startswith('### '):
+            name = stripped[3:].strip()
+            if name in ('목차', '변경 이력'):
+                continue
+            h2_sections.append({'name': name, 'line': i})
+
+    # 콘텐츠 H2가 2개 미만이면 스킵
+    if len(h2_sections) < 2:
+        return
+
+    # 각 섹션 줄 수 계산
+    for idx, sec in enumerate(h2_sections):
+        start = sec['line']
+        end = h2_sections[idx + 1]['line'] if idx + 1 < len(h2_sections) else len(lines)
+        sec['lines'] = end - start
+
+    max_sec = max(h2_sections, key=lambda s: s['lines'])
+    min_sec = min(h2_sections, key=lambda s: s['lines'])
+
+    if min_sec['lines'] > 0 and max_sec['lines'] / min_sec['lines'] > 3.0:
+        ratio = max_sec['lines'] / min_sec['lines']
+        issues.append({
+            'check': 'sectionBalance',
+            'severity': 'INFO',
+            'line': max_sec['line'] + 1,
+            'message': f'섹션 분량 불균형: "{max_sec["name"]}" ({max_sec["lines"]}줄) vs "{min_sec["name"]}" ({min_sec["lines"]}줄) — {ratio:.1f}배 차이',
+        })
+
+
 # ============================================================
 # 출력 포맷터
 # ============================================================
@@ -354,6 +560,45 @@ SEVERITY_COLORS = {
     'INFO': '\033[37m',      # 회색
 }
 RESET = '\033[0m'
+
+# 코드블록 언어 태그 유효성 검사용 (~80개)
+KNOWN_LANGUAGES = {
+    # 주요 언어
+    'python', 'py', 'javascript', 'js', 'typescript', 'ts', 'java', 'kotlin', 'kt',
+    'csharp', 'cs', 'c', 'cpp', 'c++', 'go', 'rust', 'rs', 'ruby', 'rb', 'php',
+    'swift', 'scala', 'r', 'perl', 'pl', 'lua', 'dart', 'elixir', 'ex', 'erlang',
+    'haskell', 'hs', 'clojure', 'clj', 'fsharp', 'fs', 'ocaml', 'ml',
+    # 쉘/스크립트
+    'bash', 'sh', 'zsh', 'fish', 'powershell', 'ps1', 'pwsh', 'bat', 'cmd',
+    'shell', 'console',
+    # 웹
+    'html', 'css', 'scss', 'sass', 'less', 'jsx', 'tsx', 'vue', 'svelte',
+    # 데이터/설정
+    'json', 'jsonc', 'json5', 'yaml', 'yml', 'toml', 'xml', 'ini', 'cfg',
+    'properties', 'env', 'dotenv',
+    # 쿼리/DB
+    'sql', 'mysql', 'postgresql', 'plsql', 'nosql', 'mongodb', 'redis',
+    'graphql', 'gql',
+    # 마크업/문서
+    'markdown', 'md', 'latex', 'tex', 'rst', 'asciidoc', 'text', 'txt',
+    'plaintext', 'plain',
+    # DevOps/인프라
+    'dockerfile', 'docker', 'terraform', 'tf', 'hcl', 'nginx', 'apache',
+    'kubernetes', 'k8s', 'helm', 'ansible', 'vagrant',
+    # 기타 도구
+    'makefile', 'make', 'cmake', 'gradle', 'groovy', 'maven',
+    'mermaid', 'plantuml', 'dot', 'graphviz',
+    # 데이터 교환
+    'csv', 'tsv', 'protobuf', 'proto', 'thrift', 'avro',
+    # diff/log
+    'diff', 'patch', 'log', 'http', 'curl',
+    # 기타
+    'regex', 'regexp', 'cron', 'promql', 'rego',
+    'gitignore', 'editorconfig',
+    'objective-c', 'objc', 'assembly', 'asm', 'nasm',
+    'vb', 'vbnet', 'pascal', 'delphi', 'fortran', 'cobol', 'lisp',
+    'solidity', 'sol', 'wasm', 'zig',
+}
 
 
 def print_text_report(results):

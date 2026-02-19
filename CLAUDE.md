@@ -201,6 +201,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 조기 종료 + 델타 추적 | **완료** | 6단계 루프 개선: PLATEAU/OSCILLATION 감지, 최적 결과 보존 |
 | 다차원 품질 점수 | **완료** | `tools/score-docx.js` — 5차원 1-10 점수 + 시계열 추적 |
 | 패턴 붕괴 방지 | **완료** | `extract-patterns.js --audit` — 출처 추적 + 다양성 메트릭 |
+| lint-md.py 확장 | **완료** | 5개 검사 추가 (중첩 불릿, 8+ 컬럼, 이미지 참조, 언어 태그, 섹션 균형) |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -294,7 +295,7 @@ gendocs/
     ├── create-score-baselines.js    ← [v0.4] 점수 baseline 생성
     ├── check-rules.js               ← [v0.3] 규칙 충돌 감지
     ├── review-docx.py               ← [v0.3] AI 셀프리뷰 (너비 불균형, 콘텐츠 정합성, 품질 검사)
-    ├── lint-md.py                   ← [v0.3] MD 구조 린트 (변경이력 용어, 구분선, 코드블록 균형, TOC)
+    ├── lint-md.py                   ← [v0.3] MD 구조 린트 (11가지 검사: 메타데이터~섹션 균형)
     ├── visual-verify.py             ← [v0.3] 시각적 검증 (LibreOffice 필요)
     ├── convert-to-docx.js           ← 초기 프로토타입 변환기
     ├── debug-convert.js             ← 변환 디버깅 도구
@@ -532,7 +533,7 @@ python -X utf8 tools/extract-docx.py output/문서.docx --json
 
 변환 전후 3종의 검증을 수행한다:
 
-0. **MD 린트** (`tools/lint-md.py`) — 변환 전 MD 구조 검사 (변경이력 용어, 구분선, 코드블록 균형, TOC 일치)
+0. **MD 린트** (`tools/lint-md.py`) — 변환 전 MD 구조 검사 (11가지: 메타데이터, 구분선, 변경이력, 코드블록 균형, TOC, HTML, 중첩 불릿, 8+ 컬럼, 이미지 참조, 언어 태그, 섹션 균형)
 1. **레이아웃 검증** (`tools/validate-docx.py`) — 구조 검증 + 페이지 레이아웃 시뮬레이션
 2. **AI 셀프리뷰** (`tools/review-docx.py`) — 콘텐츠 정합성 + 컬럼 너비 불균형 + 품질 검사
 

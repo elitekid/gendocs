@@ -176,13 +176,18 @@ PDF는 DOCX와 달리 heading level, 테이블 구조 등의 메타데이터가 
    python -X utf8 tools/lint-md.py source/{파일}.md --json
    ```
 
-   lint-md.py가 6가지 구조 검사를 수행합니다:
+   lint-md.py가 11가지 구조 검사를 수행합니다:
    - **metadata** — 메타데이터 블록쿼트(프로젝트/버전/작성일) 완성도
    - **separator** — H2 섹션 사이 `---` 구분선 존재
    - **changeHistory** — v1.0 변경 내용이 "초안 작성"인지
    - **codeBlockBalance** — 코드블록 열림/닫힘 균형 (CRITICAL)
    - **tocConsistency** — 목차 항목과 실제 H2 섹션 일치
    - **htmlArtifact** — 코드블록 외부 HTML 태그 잔여물
+   - **nestedBullet** — 중첩 불릿 감지 (CRITICAL, converter가 들여쓰기 무시)
+   - **tableColumnCount** — 8개 이상 컬럼 테이블 (WARN)
+   - **imageReference** — 이미지 파일 참조 존재 여부 (CRITICAL)
+   - **codeLanguageTag** — 코드블록 언어 태그 유효성 (MINOR)
+   - **sectionBalance** — H2 섹션 간 분량 불균형 (INFO)
 
    결과 처리:
    - **CRITICAL** (닫히지 않은 코드블록) → **즉시 수정** (변환하면 이후 콘텐츠 전부 깨짐)
