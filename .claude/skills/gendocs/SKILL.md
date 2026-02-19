@@ -314,6 +314,7 @@ doc-config JSON에 포함할 내용:
   "output": "output/파일명_{version}.docx",
   "template": "professional",
   "theme": "navy-professional",
+  "_meta": { "createdBy": "ai", "createdAt": "YYYY-MM-DD" },
   "h1CleanPattern": "^# 문서제목패턴",
   "headerCleanUntil": "## 변경 이력",
   "docInfo": { "title": "...", "subtitle": "...", "version": "v1.0", ... },
@@ -323,6 +324,8 @@ doc-config JSON에 포함할 내용:
   "style": { "colors": { "accent": "FF6B35" } }
 }
 ```
+
+> `_meta.createdBy`: `/gendocs` 스킬로 생성 시 `"ai"`, 사용자가 수작업으로 작성 시 `"human"`. 패턴 붕괴 방지를 위한 출처 추적에 사용.
 
 ### 5-2. 실행
 ```bash
@@ -502,6 +505,11 @@ output/{파일명}.docx 생성 완료
 ```bash
 node tools/extract-patterns.js
 node tools/score-docx.js doc-configs/{파일명}.json --skip-convert --save
+```
+
+패턴 다양성 감사 (선택):
+```bash
+node tools/extract-patterns.js --audit    # 출처 분포 + 다양성 메트릭 리포트
 ```
 
 변환 성공(WARN 0)이고 FIX 없이 통과한 경우 `lib/reflections.json`에 기록:

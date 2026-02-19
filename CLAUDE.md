@@ -200,6 +200,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 경험 기억 (Reflexion) | **완료** | `lib/reflections.json` — 교정 경험 저장·재활용, 반복 FIX 감소 |
 | 조기 종료 + 델타 추적 | **완료** | 6단계 루프 개선: PLATEAU/OSCILLATION 감지, 최적 결과 보존 |
 | 다차원 품질 점수 | **완료** | `tools/score-docx.js` — 5차원 1-10 점수 + 시계열 추적 |
+| 패턴 붕괴 방지 | **완료** | `extract-patterns.js --audit` — 출처 추적 + 다양성 메트릭 |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -342,6 +343,7 @@ node lib/convert.js doc-configs/내문서.json --validate
   "output": "output/내문서_{version}.docx",
   "template": "professional",
   "theme": "navy-professional",
+  "_meta": { "createdBy": "ai", "createdAt": "2026-01-01" },
   "style": { "colors": { "accent": "FF6B35" } },
   "h1CleanPattern": "^# 문서제목",
   "headerCleanUntil": "## 변경 이력",
@@ -766,6 +768,31 @@ node tools/score-docx.js --batch --skip-convert                # 기존 DOCX 사
 - `lib/scoring.js` — 점수 계산 공유 모듈 (순수 함수)
 - `tools/score-docx.js` — CLI (단일/배치)
 - `tools/create-score-baselines.js` — 점수 baseline 생성
+
+### 패턴 붕괴 방지 (Pattern Collapse Prevention)
+
+AI 생성 doc-config가 패턴 DB(`patterns.json`)에 피드백되어 다양성이 감소하는 Model Collapse를 방지한다.
+
+**출처 추적**: doc-config에 `_meta.createdBy` 필드(`"human"` / `"ai"` / 없으면 `"unknown"`)를 추가하여 패턴의 출처를 추적한다. `extract-patterns.js`가 이 필드를 읽어 `patterns.json`의 `_provenance` 섹션에 출처별 통계를 기록한다.
+
+**다양성 메트릭**: 동일 헤더 패턴에 서로 다른 너비 조합(variant)이 얼마나 있는지, 5개+ 문서가 동일 너비를 사용하는 수렴 패턴이 있는지 추적한다.
+
+**`_provenance` 섹션**: `patterns.json`에 자동 추가. `converter-core.js`는 `tableWidths`만 접근하므로 하위 호환.
+
+```bash
+node tools/extract-patterns.js              # 기존 동작 + _provenance 자동 생성
+node tools/extract-patterns.js --audit      # + 다양성 감사 리포트 출력
+```
+
+**doc-config `_meta` 필드**:
+```json
+{
+  "_meta": { "createdBy": "ai", "createdAt": "2026-02-19" }
+}
+```
+- `/gendocs` 스킬로 생성 → `"createdBy": "ai"`
+- 사용자가 수작업 작성 → `"createdBy": "human"`
+- 필드 없음 → `"unknown"` (기존 doc-config와 호환)
 
 ---
 
