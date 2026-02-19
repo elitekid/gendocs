@@ -195,6 +195,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 성공 패턴 추출 | **완료** | `tools/extract-patterns.js` → `lib/patterns.json` (common/byDocType) |
 | 규칙 충돌 감지 | **완료** | `tools/check-rules.js` + regression-test 게이트 |
 | 시각적 검증 | **완료** | `tools/visual-verify.py` (LibreOffice → PDF → 이미지, 선택적) |
+| 경험 기억 (Reflexion) | **완료** | `lib/reflections.json` — 교정 경험 저장·재활용, 반복 FIX 감소 |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -233,7 +234,8 @@ gendocs/
 ├── lib/                             ← [v0.2] Generic Converter 엔진
 │   ├── converter-core.js            ← 공통 변환 로직 (파싱, 너비 계산, 변환, 빌드)
 │   ├── convert.js                   ← 진입점: node lib/convert.js <config.json>
-│   └── patterns.json                ← [v0.3] 공유 패턴 DB (tableWidths common/byDocType)
+│   ├── patterns.json                ← [v0.3] 공유 패턴 DB (tableWidths common/byDocType)
+│   └── reflections.json             ← [v0.4] 에피소딕 메모리 (교정 경험 저장)
 │
 ├── doc-configs/                     ← [v0.2] 문서별 설정 파일 (JSON, 사용자 생성)
 │   └── (사용자가 /gendocs로 자동 생성)
@@ -242,6 +244,13 @@ gendocs/
 │   └── (사용자의 원본 MD 파일)
 │
 ├── output/                          ← 생성된 최종 문서 (출력)
+│
+├── themes/                          ← 테마 프리셋 JSON (5종)
+│   ├── navy-professional.json       ← 기본 (네이비 블루)
+│   ├── slate-modern.json            ← 쿨그레이, 모던
+│   ├── teal-corporate.json          ← 티얼/그린, 기업용
+│   ├── wine-elegant.json            ← 와인/버건디, 포멀
+│   └── blue-standard.json           ← 블루 기본, 심플
 │
 ├── templates/                       ← 포맷별 문서 템플릿
 │   ├── docx/
@@ -275,6 +284,8 @@ gendocs/
     ├── create-baselines.js          ← [v0.3] baseline 생성
     ├── extract-patterns.js          ← [v0.3] 성공 패턴 추출 → lib/patterns.json
     ├── check-rules.js               ← [v0.3] 규칙 충돌 감지
+    ├── review-docx.py               ← [v0.3] AI 셀프리뷰 (너비 불균형, 콘텐츠 정합성, 품질 검사)
+    ├── lint-md.py                   ← [v0.3] MD 구조 린트 (변경이력 용어, 구분선, 코드블록 균형, TOC)
     ├── visual-verify.py             ← [v0.3] 시각적 검증 (LibreOffice 필요)
     ├── convert-to-docx.js           ← 초기 프로토타입 변환기
     ├── debug-convert.js             ← 변환 디버깅 도구
@@ -322,6 +333,8 @@ node lib/convert.js doc-configs/내문서.json --validate
   "source": "source/내문서.md",
   "output": "output/내문서_{version}.docx",
   "template": "professional",
+  "theme": "navy-professional",
+  "style": { "colors": { "accent": "FF6B35" } },
   "h1CleanPattern": "^# 문서제목",
   "headerCleanUntil": "## 변경 이력",
   "docInfo": {
@@ -385,6 +398,73 @@ if (line.startsWith('### ')) {
 
 ---
 
+## 테마 시스템
+
+### 개요
+
+DOCX 스타일(색상, 폰트, 크기)을 JSON 테마 파일로 분리하여 문서마다 다른 색상/폰트를 적용할 수 있다.
+
+**Fallback 체인**: `doc-config "style"` > `theme JSON` > `템플릿 DEFAULT`
+
+### 프리셋 테마 (5종)
+
+| 파일 | 이름 | 주색상 | 설명 |
+|------|------|--------|------|
+| `themes/navy-professional.json` | Navy Professional | #1B3664 | 기본 (기존 스타일과 동일) |
+| `themes/slate-modern.json` | Slate Modern | #2D3748 | 쿨그레이, 모던 |
+| `themes/teal-corporate.json` | Teal Corporate | #0D6E6E | 티얼/그린, 기업 문서용 |
+| `themes/wine-elegant.json` | Wine Elegant | #6B2D3E | 와인/버건디, 포멀 |
+| `themes/blue-standard.json` | Blue Standard | #1F4E79 | 블루 기본, 심플 |
+
+### doc-config에서 사용
+
+```json
+{
+  "source": "source/my-doc.md",
+  "template": "professional",
+  "theme": "teal-corporate",
+  "style": {
+    "colors": { "accent": "FF6B35" }
+  },
+  "docInfo": { ... }
+}
+```
+
+- `"theme"` 생략 → 템플릿 기본값 (navy-professional 색상)
+- `"style"` 생략 → 테마 그대로
+- 둘 다 생략 → 현재와 100% 동일 (하위 호환)
+
+### 테마 JSON 구조
+
+```json
+{
+  "name": "theme-name",
+  "displayName": "표시 이름",
+  "colors": {
+    "primary": "1B3664", "secondary": "2B5598", "accent": "F5A623",
+    "text": "333333", "textLight": "666666", "textDark": "404040",
+    "white": "FFFFFF", "border": "CCCCCC", "altRow": "F2F2F2",
+    "codeDarkBg": "1E1E1E", "codeDarkBorder": "3C3C3C",
+    "infoBox": "E8F4FD", "infoBoxBorder": "1B3664",
+    "warningBox": "FEF6E6", "warningBoxBorder": "F5A623", "warningBoxText": "8B4513",
+    "inlineCode": "555555", "headerFooter": "666666",
+    "jsonBg": "F5F5F5", "flowBoxBorder": "666666", "flowBoxBg": "F5F5F5"
+  },
+  "fonts": { "default": "Malgun Gothic", "code": "Consolas" },
+  "sizes": { "title": 48, "subtitle": 26, "h1": 28, "h2": 24, "h3": 22, "h4": 20, "body": 20, "small": 18, "code": 16 },
+  "syntax": { "keyword": "569CD6", "type": "4EC9B0", "string": "CE9178", "comment": "6A9955", "default": "D4D4D4" }
+}
+```
+
+### 기술 구현
+
+- 템플릿(`professional.js`, `basic.js`)은 **factory function 패턴**으로 구현: `module.exports = createTemplate`
+- `converter-core.js`의 `resolveTheme(config, projectRoot)` → 테마 JSON 로드 + style 오버라이드 머지
+- `loadTemplate(templateName, themeConfig)` → factory 호출
+- 검증 도구(`validate-docx.py`, `review-docx.py`, `extract-docx.py`)는 모든 테마의 색상을 인식
+
+---
+
 ## 스타일 가이드
 
 ### 공통 디자인 토큰
@@ -440,27 +520,39 @@ python -X utf8 tools/extract-docx.py output/문서.docx --json
 
 ### 개요
 
-DOCX를 생성한 후 반드시 `tools/validate-docx.py`로 검증한다. 이 스크립트는 DOCX(ZIP)를 해체하여 XML을 파싱하고, **구조 검증 + 페이지 레이아웃 시뮬레이션**을 수행한다.
+변환 전후 3종의 검증을 수행한다:
+
+0. **MD 린트** (`tools/lint-md.py`) — 변환 전 MD 구조 검사 (변경이력 용어, 구분선, 코드블록 균형, TOC 일치)
+1. **레이아웃 검증** (`tools/validate-docx.py`) — 구조 검증 + 페이지 레이아웃 시뮬레이션
+2. **AI 셀프리뷰** (`tools/review-docx.py`) — 콘텐츠 정합성 + 컬럼 너비 불균형 + 품질 검사
 
 ```bash
-# 텍스트 리포트 (사람이 읽을 때)
-python -X utf8 tools/validate-docx.py output/문서.docx
+# MD 린트 (변환 전)
+python -X utf8 tools/lint-md.py source/문서.md --json
+python -X utf8 tools/lint-md.py source/*.md              # 배치 모드
 
-# JSON 리포트 (자가개선 루프용)
+# 레이아웃 검증
 python -X utf8 tools/validate-docx.py output/문서.docx --json
 
-# 변환 + 검증 한 번에
+# AI 셀프리뷰 (소스 비교 포함)
+python -X utf8 tools/review-docx.py output/문서.docx --config doc-configs/문서.json --json
+
+# AI 셀프리뷰 (단독)
+python -X utf8 tools/review-docx.py output/문서.docx --json
+
+# 변환 + 레이아웃 검증 한 번에
 node lib/convert.js doc-configs/문서.json --validate
 ```
 
 **자동 수정 원칙**:
-- **WARN**만 자동 수정 대상 (이미지 배치 등 명확한 레이아웃 문제)
+- **WARN**만 자동 수정 대상 (이미지 배치, 콘텐츠 누락 등 명확한 문제)
+- **SUGGEST** — 컬럼 너비 재분배 등 명확한 개선이면 적용
 - **INFO**는 참고용 — 일괄 수정 금지 (시뮬레이션 추정치와 실제 Word 렌더링은 다를 수 있음)
 - 수정 후 페이지 수가 10% 이상 증가하면 과도한 수정. 롤백 후 개별 검토
 - 패턴 매칭 일괄 break 삽입 금지 — 특정 위치만 수정
 
 ```
-생성 → 검증(JSON) → WARN 분석 → config 수정 → 재생성 → 재검증 (최대 4회)
+생성 → 레이아웃 검증 → AI 셀프리뷰 → WARN/SUGGEST 수정 → 재생성 → 재검증 (최대 4회)
 ```
 
 ### 검증 항목
@@ -508,6 +600,37 @@ XML에서 각 요소의 높이를 추정하여 가로 A4 기준(가용 높이 ~4
   [WARN] p.6 이미지(510x315pt)가 이전 콘텐츠와 같은 페이지에 배치됨
        → 섹션 "3.3 예시 다이어그램" 앞에 페이지 나누기를 추가하면 깔끔하게 표시됩니다
 ```
+
+### AI 셀프리뷰 (review-docx.py, v0.3)
+
+변환된 DOCX의 콘텐츠 품질을 자동 분석한다. validate-docx.py가 레이아웃을 검증하는 반면, review-docx.py는 콘텐츠 정합성과 테이블 가독성에 집중한다.
+
+```bash
+# 소스 비교 포함
+python -X utf8 tools/review-docx.py output/문서.docx --config doc-configs/문서.json --json
+
+# 단독 (소스 비교 없이)
+python -X utf8 tools/review-docx.py output/문서.docx --json
+```
+
+**검사 항목 (6가지)**:
+
+| 검사 | 유형 | 심각도 | 설명 |
+|------|------|--------|------|
+| 콘텐츠 정합성 | CONTENT_MISSING / CONTENT_EXTRA | WARN / INFO | 소스 MD vs DOCX 요소 수 비교 |
+| 컬럼 너비 불균형 | WIDTH_IMBALANCE | SUGGEST | 줄바꿈 컬럼 + 빈 인접 컬럼 → 너비 재분배 제안 |
+| 넓은 낭비 | WIDE_WASTE | INFO | 컬럼 활용률 30% 미만 |
+| 테이블 가독성 | TOO_MANY_COLUMNS / CELL_OVERFLOW / EMPTY_COLUMN | INFO | 8+ 컬럼, 4줄+ 셀, 빈 컬럼 |
+| 코드 무결성 | TRUNCATED_JSON / EMPTY_CODE | WARN | 잘린 JSON, 빈 코드블록 |
+| 제목 구조 | DUPLICATE_HEADING / LONG_SECTION | WARN / INFO | 연속 동일 제목, H3 없는 긴 섹션 |
+
+**심각도 체계**:
+
+| 심각도 | 의미 | 처리 |
+|--------|------|------|
+| WARN | 명확한 문제 | Claude Code 자동 수정 |
+| SUGGEST | 개선 기회 | doc-config tableWidths 업데이트 → 재변환 |
+| INFO | 참고 관찰 | 사용자에게 보고만 |
 
 ### 회귀 테스트 (v0.3)
 
@@ -582,6 +705,16 @@ python -X utf8 tools/visual-verify.py output/문서.docx --save-images
 - 4a: 페이지 수 비교 (validate 추정 vs 실제 렌더링)
 - 4b: 빈 페이지 감지 (95% 이상 흰색 픽셀)
 - 4c: 플래그된 페이지 이미지를 Claude Code가 시각 리뷰
+
+### 경험 기억 (Episodic Memory, v0.4)
+
+교정 경험을 `lib/reflections.json`에 저장하고, 유사 문서 생성 시 참조하여 FIX 반복을 감소시킨다.
+
+- **기록 시점**: FIX 성공, ROLLBACK, SUGGEST 적용, PASS (WARN 0)
+- **주입 시점**: SKILL.md 5-1 (doc-config 작성 전, reflections 조회)
+- **매칭**: docType > tags > issue.type
+- **크기 제한**: 200개, PASS 먼저 삭제, ROLLBACK 보존
+- **승격**: 3개+ 문서 동일 tableWidths fix → patterns.json common (extract-patterns.js)
 
 ---
 

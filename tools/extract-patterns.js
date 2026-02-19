@@ -60,6 +60,36 @@ function main() {
     }
   }
 
+  // ===== Reflection-based pattern extraction =====
+  const REFLECTIONS_PATH = path.join(PROJECT_ROOT, 'lib', 'reflections.json');
+
+  if (fs.existsSync(REFLECTIONS_PATH)) {
+    const refData = JSON.parse(fs.readFileSync(REFLECTIONS_PATH, 'utf-8'));
+    const reflections = refData.reflections || [];
+
+    const widthFixes = reflections.filter(r =>
+      (r.outcome === 'FIX' || r.outcome === 'SUGGEST_APPLIED') &&
+      r.fix && r.fix.target === 'doc-config' &&
+      r.fix.field === 'tableWidths' &&
+      r.fix.value && typeof r.fix.value === 'object'
+    );
+
+    for (const r of widthFixes) {
+      for (const [pattern, widths] of Object.entries(r.fix.value)) {
+        const widthsKey = JSON.stringify(widths);
+        if (!patternMap[pattern]) patternMap[pattern] = {};
+        if (!patternMap[pattern][widthsKey]) {
+          patternMap[pattern][widthsKey] = { widths, usedBy: [] };
+        }
+        if (!patternMap[pattern][widthsKey].usedBy.includes(r.docName)) {
+          patternMap[pattern][widthsKey].usedBy.push(r.docName);
+        }
+      }
+    }
+
+    console.log(`  reflections.json에서 ${widthFixes.length}개 너비 수정 기록 병합`);
+  }
+
   // 분류: common vs byDocType
   const common = {};
   const byDocType = {};

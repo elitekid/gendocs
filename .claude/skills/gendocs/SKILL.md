@@ -170,7 +170,26 @@ PDF는 DOCX와 달리 heading level, 테이블 구조 등의 메타데이터가 
 
 2단계에서 MD가 준비되면(생성, 변환, 선택 모두 해당), 반드시 아래 셀프리뷰를 수행합니다:
 
-1. **읽는 사람 관점으로 MD를 처음부터 끝까지 읽기**
+1. **MD 구조 린트 (자동)**
+
+   ```bash
+   python -X utf8 tools/lint-md.py source/{파일}.md --json
+   ```
+
+   lint-md.py가 6가지 구조 검사를 수행합니다:
+   - **metadata** — 메타데이터 블록쿼트(프로젝트/버전/작성일) 완성도
+   - **separator** — H2 섹션 사이 `---` 구분선 존재
+   - **changeHistory** — v1.0 변경 내용이 "초안 작성"인지
+   - **codeBlockBalance** — 코드블록 열림/닫힘 균형 (CRITICAL)
+   - **tocConsistency** — 목차 항목과 실제 H2 섹션 일치
+   - **htmlArtifact** — 코드블록 외부 HTML 태그 잔여물
+
+   결과 처리:
+   - **CRITICAL** (닫히지 않은 코드블록) → **즉시 수정** (변환하면 이후 콘텐츠 전부 깨짐)
+   - **MINOR/STYLE** → source MD 직접 편집으로 수정
+   - 배치 모드: `python -X utf8 tools/lint-md.py source/*.md --json`
+
+2. **읽는 사람 관점으로 MD를 처음부터 끝까지 읽기**
    - 섹션 구조가 논리적인가? (목차 → 변경 이력 → 본문 순서)
    - 각 요소의 표현 방식이 적절한가?
      - 소규모 키-값(1~3행 2컬럼)은 테이블 대신 불릿이 자연스러운지
@@ -178,15 +197,16 @@ PDF는 DOCX와 달리 heading level, 테이블 구조 등의 메타데이터가 
      - 코드블록의 언어 태그가 올바른지
    - 누락된 섹션이나 불완전한 내용이 없는지
 
-2. **어색한 부분 수정** → source/ MD 파일 직접 편집
+3. **어색한 부분 수정** → source/ MD 파일 직접 편집
 
-3. **반복 패턴 여부 판단**
+4. **반복 패턴 여부 판단**
    - 발견한 문제가 이 문서만의 문제가 아니라 반복될 패턴이면, 원인이 된 규칙(SKILL.md, MEMORY.md 등)도 함께 수정
    - 규칙 수정 시: `node tools/regression-test.js`를 실행하여 기존 문서가 깨지지 않는지 확인
 
-4. **배치(batch) 처리 시에도 예외 없음**
+5. **배치(batch) 처리 시에도 예외 없음**
    - 여러 문서를 한 번에 처리하더라도, 각 MD에 대해 셀프리뷰를 수행
    - 시간 제약 시 최소한 샘플 3~5개를 대표로 검토
+   - 린트(1번)는 전수 실행, AI 리뷰(2번)는 샘플 허용
 
 > 셀프리뷰 완료 후 3단계로 진행합니다.
 
@@ -200,6 +220,37 @@ AskUserQuestion으로 물어보세요:
 |--------|------|
 | Professional (권장) | 가로 레이아웃, 다크테마 코드블록, 표지, 머릿글/바닥글 |
 | Basic | 세로 레이아웃, 심플 스타일 |
+
+---
+
+## 3.5단계: 테마 선택
+
+AskUserQuestion으로 물어보세요: "문서 테마를 선택하세요"
+
+| 선택지 | 설명 |
+|--------|------|
+| Navy Professional (기본) | 네이비 헤더, 골드 강조 — 기존 스타일과 동일 |
+| Slate Modern | 쿨그레이, 모던한 느낌 |
+| Teal Corporate | 티얼/그린, 기업 문서용 |
+| Wine Elegant | 와인/버건디, 포멀한 느낌 |
+| Blue Standard | 블루 기본, 심플 |
+
+> "기본값으로" 또는 선택하지 않으면 Navy Professional이 적용됩니다.
+
+doc-config에 `"theme"` 필드를 포함하세요:
+- Navy Professional → `"theme"` 생략 (기본값)
+- Slate Modern → `"theme": "slate-modern"`
+- Teal Corporate → `"theme": "teal-corporate"`
+- Wine Elegant → `"theme": "wine-elegant"`
+- Blue Standard → `"theme": "blue-standard"`
+
+특정 색상만 오버라이드하려면 `"style"` 필드를 추가:
+```json
+{
+  "theme": "teal-corporate",
+  "style": { "colors": { "accent": "FF6B35" } }
+}
+```
 
 ---
 
@@ -222,12 +273,13 @@ AskUserQuestion으로 물어보세요:
 
 | 계층 | 시점 | 무엇을 | 어떻게 |
 |------|------|--------|--------|
-| ① MD 셀프리뷰 | 변환 전 | MD 표현 적절성 | 읽는 사람 관점 재검토 + 반복 패턴이면 프로젝트 규칙도 수정 |
-| ② 콘텐츠 검증 | 변환 후 | 원본 대비 누락 | 요소 수 비교 (섹션/테이블/코드/이미지) |
+| ① MD 셀프리뷰 | 변환 전 | MD 구조 + 표현 적절성 | lint-md.py 자동 검사 → AI 읽기 리뷰 → 수정 |
+| ② AI 셀프리뷰 | 변환 후 | 콘텐츠 정합성 + 품질 | review-docx.py 자동 분석 + AI 판단 |
 | ③ 레이아웃 루프 | 변환 후 | 페이지 배치 | WARN 기반 doc-config 수정 반복 (최대 4회) |
+| ④ 경험 기억 | 세션 간 | 교정 경험 재활용 | reflections.json 조회 → doc-config 사전 설정 |
 
 - 계층 ①: 2단계 후 **필수 게이트** → [셀프리뷰](#셀프리뷰-필수-게이트--생략-금지)
-- 계층 ②: 5단계 변환 후 실행 → [5-4. 콘텐츠 검증](#5-4-계층--콘텐츠-검증-원본-대비)
+- 계층 ②: 5단계 변환 후 실행 → [5-4. AI 셀프리뷰](#5-4-계층--ai-셀프리뷰-콘텐츠--품질)
 - 계층 ③: 6단계에서 실행 → [6단계. 레이아웃 자가개선 루프](#6단계-계층--레이아웃-자가개선-루프-최대-4회)
 
 ---
@@ -240,10 +292,20 @@ AskUserQuestion으로 물어보세요:
 
 기존 doc-configs/ 에서 유사한 설정 파일을 참조하여 `doc-configs/{파일명}.json`을 작성하세요.
 
-참조할 것:
-- `examples/sample-api/doc-config.json` — API 명세서 패턴 (테이블, JSON 코드블록, 정보/경고 박스)
-- `examples/sample-batch/doc-config.json` — 배치 규격서 패턴 (고정길이 레코드, 명시적 break 목록)
-- `lib/converter-core.js` — config JSON 스키마 및 변환 로직
+**참조할 것** (우선순위 순):
+
+1. **경험 기억 (Reflexion)**: `lib/reflections.json`이 있으면 현재 문서와 유사한 경험 조회:
+   - 동일 `docType` 항목 필터링
+   - `outcome`이 "FIX"/"SUGGEST_APPLIED" → `reflection`과 `fix` 참조하여 doc-config에 사전 반영
+   - `outcome`이 "ROLLBACK" → **하지 말아야 할 것**으로 참조
+   - 매칭: 동일 docType > 동일 tags > 동일 issue.type
+   - 예: 과거 api-spec에서 `imageH3AlwaysBreak: true`가 FIX 기록 → 새 API 문서에 기본 포함
+   - 예: 과거 batch-spec에서 H4 일괄 break ROLLBACK 기록 → 같은 시도 금지
+   > reflections.json이 없거나 빈 배열이면 이 단계 건너뛰기
+
+2. **기존 doc-configs**: `examples/sample-api/doc-config.json`, `examples/sample-batch/doc-config.json`
+3. **패턴 DB**: `lib/patterns.json` (자동 fallback — converter-core.js가 처리)
+4. **변환 로직**: `lib/converter-core.js` — config JSON 스키마
 
 doc-config JSON에 포함할 내용:
 ```json
@@ -251,12 +313,14 @@ doc-config JSON에 포함할 내용:
   "source": "source/파일명.md",
   "output": "output/파일명_{version}.docx",
   "template": "professional",
+  "theme": "navy-professional",
   "h1CleanPattern": "^# 문서제목패턴",
   "headerCleanUntil": "## 변경 이력",
   "docInfo": { "title": "...", "subtitle": "...", "version": "v1.0", ... },
   "tableWidths": { "헤더1|헤더2|헤더3": [w1, w2, w3], ... },
   "pageBreaks": { ... },
-  "images": { "basePath": "...", "sectionMap": { ... } }
+  "images": { "basePath": "...", "sectionMap": { ... } },
+  "style": { "colors": { "accent": "FF6B35" } }
 }
 ```
 
@@ -275,24 +339,37 @@ python -X utf8 tools/validate-docx.py output/{파일명}.docx --json
 node lib/convert.js doc-configs/{파일명}.json --validate
 ```
 
-### 5-4. 계층 ② — 콘텐츠 검증 (원본 대비)
+### 5-4. 계층 ② — AI 셀프리뷰 (콘텐츠 + 품질)
 
-**모든 입력 타입에 대해** 생성된 DOCX의 구조가 원본 소스와 일치하는지 확인하세요.
+**Part A: 자동 리뷰 (review-docx.py)**
 
-검증 항목:
-- 섹션(heading) 수: 원본과 생성물의 H2/H3/H4 수가 일치하는지
-- 테이블 수: 원본의 테이블이 모두 포함되었는지
-- 코드블록 수: 원본의 코드/명령어가 모두 포함되었는지
-- 이미지 수: 원본의 이미지가 모두 포함되었는지
+```bash
+python -X utf8 tools/review-docx.py output/{파일}.docx --config doc-configs/{파일}.json --json
+```
 
-비교 방법 (입력 타입별):
-- `.docx` 입력 → extract-docx.py의 stats와 validate-docx.py의 stats 비교
-- `.pdf` 입력 → 2단계에서 기록한 원본 카운트와 validate stats 비교
-- 텍스트/구두 → 생성된 MD의 구조와 validate stats 비교
+스크립트가 6가지 검사를 수행합니다:
+1. **콘텐츠 정합성** — 소스 MD vs DOCX 요소 수 비교 (H2/H3/H4, 테이블, 코드블록, 이미지, 불릿, 인포/경고박스)
+2. **컬럼 너비 불균형** — 한 컬럼이 줄바꿈되는데 인접 컬럼은 빈 공간이 많은 경우 감지 + 너비 재분배 제안
+3. **테이블 가독성** — 8개 이상 컬럼, 빈 컬럼, 셀 오버플로우
+4. **코드블록 무결성** — 잘린 JSON, 빈 코드블록
+5. **페이지 분포** — 희소 페이지, 연속 희소 페이지
+6. **제목 구조** — 동일 연속 제목, H3 없는 긴 H2 섹션
 
-불일치 시:
-- 누락된 항목을 식별하고 source MD 또는 doc-config를 수정
-- 수정 후 5-2부터 재실행
+결과 처리:
+- **WARN** (콘텐츠 누락, 잘린 코드 등) → 즉시 수정 (source MD 또는 doc-config)
+- **SUGGEST** (너비 재분배) → 명확한 개선이면 적용 (doc-config tableWidths 업데이트 → 재변환)
+  - SUGGEST를 적용한 경우 `lib/reflections.json`에 기록: `layer`: 2, `outcome`: "SUGGEST_APPLIED", `fix`: 적용한 너비 변경 내용
+- **INFO** (많은 컬럼, 희소 페이지 등) → 5-5 리포트에 포함
+
+**Part B: AI 판단 리뷰**
+
+review-docx.py 결과를 검토한 후, `extract-docx.py --json` 출력을 읽고 추가 판단:
+1. 테이블 데이터가 문맥상 맞는가?
+2. 인포/경고 박스가 적절한 위치인가?
+3. 문서 전체 흐름이 논리적인가?
+4. 구조적으로 "이상해 보이는" 부분이 있는가?
+
+> Part B는 WARN/SUGGEST가 0건일 때도 반드시 수행합니다.
 
 ### 5-5. 결과 리포트
 검증 결과를 사용자에게 보고하세요:
@@ -320,10 +397,33 @@ node lib/convert.js doc-configs/{파일명}.json --validate
 - 수정: doc-config JSON의 `pageBreaks`, `tableWidths` 등을 조정
 - 일괄 패턴 매칭으로 break를 넣지 말 것 (특정 위치만 수정)
 
+### FIX 성공 후 경험 기록 (Reflexion)
+
+FIX가 성공하면 (WARN이 해결되면) `lib/reflections.json`에 기록하세요:
+
+1. `lib/reflections.json`을 읽기 (없으면 빈 구조 `{"_version":1,"reflections":[]}` 생성)
+2. 해결된 WARN마다 엔트리 생성:
+   - `id`: 기존 최대 ID + 1 (`ref-NNN`)
+   - `outcome`: "FIX"
+   - `issue`: 원래 WARN 정보
+   - `fix`: 실제 수행한 수정 (필드, 액션, 값)
+   - `reflection`: **핵심 교훈** 1~2문장 (왜 발생, 어떻게 방지)
+   - `tags`: issue type + config field + doc type
+3. 저장 (`_lastUpdated` 갱신)
+
+> 200개 초과 시 가장 오래된 PASS 엔트리부터 삭제. ROLLBACK은 보존.
+
 ### ROLLBACK 판정
 - 수정 전 페이지 수를 기록
 - 수정 후 페이지 수가 10% 이상 증가하면 과도한 수정
 - 수정을 되돌리고 사용자에게 에스컬레이션
+
+### ROLLBACK 경험 기록 (Anti-pattern)
+
+ROLLBACK 발생 시 반드시 `lib/reflections.json`에 기록:
+- `outcome`: "ROLLBACK"
+- `reflection`: 왜 실패했는지, 어떤 수정이 과도했는지
+- `tags`에 `"anti-pattern"` 포함
 
 ### 4회 초과 시
 - 자동 수정을 중단하고 사용자에게 보고
@@ -351,6 +451,10 @@ output/{파일명}.docx 생성 완료
 ```bash
 node tools/extract-patterns.js
 ```
+
+변환 성공(WARN 0)이고 FIX 없이 통과한 경우 `lib/reflections.json`에 기록:
+- `outcome`: "PASS", `iteration`: 0, `fix.action`: "none"
+- `reflection`: "이 doc-config 설정으로 WARN 0. 주요: [핵심 설정 요약]"
 
 재실행 방법도 알려주세요:
 ```
