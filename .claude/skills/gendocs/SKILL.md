@@ -280,7 +280,7 @@ AskUserQuestion으로 물어보세요:
 
 - 계층 ①: 2단계 후 **필수 게이트** → [셀프리뷰](#셀프리뷰-필수-게이트--생략-금지)
 - 계층 ②: 5단계 변환 후 실행 → [5-4. AI 셀프리뷰](#5-4-계층--ai-셀프리뷰-콘텐츠--품질)
-- 계층 ③: 6단계에서 실행 → [6단계. 레이아웃 자가개선 루프](#6단계-계층--레이아웃-자가개선-루프-최대-4회)
+- 계층 ③: 6단계에서 실행 → [6단계. 레이아웃 자가개선 루프](#6단계-계층--레이아웃-자가개선-루프-최대-4회-조기-종료-포함)
 
 ---
 
@@ -380,16 +380,50 @@ review-docx.py 결과를 검토한 후, `extract-docx.py --json` 출력을 읽�
 
 ---
 
-## 6단계: 계층 ③ — 레이아웃 자가개선 루프 (최대 4회)
+## 6단계: 계층 ③ — 레이아웃 자가개선 루프 (최대 4회, 조기 종료 포함)
 
 검증 결과에 따라 판정하세요:
 
 | 판정 | 조건 | 행동 |
 |------|------|------|
 | **PASS** | WARN 0건 | 루프 종료, 완료 안내 |
-| **FIX** | WARN 있음 | doc-config 수정 → 재실행 → 재검증 |
+| **FIX** | WARN 있음 + 개선 중 | doc-config 수정 → 재실행 → 재검증 |
 | **SKIP** | INFO만 있음 | 루프 종료 (INFO는 참고용) |
 | **ROLLBACK** | 수정 후 페이지 수 10%↑ | 수정 취소, 사용자 확인 |
+| **STOP_PLATEAU** | WARN 수 변화 없음 (2회 연속 동일) | 루프 종료, 현재 결과 사용 |
+| **STOP_OSCILLATION** | WARN 수 증감 반복 (3회 방향 전환) | 루프 종료, 최적 반복 결과 사용 |
+| **STOP_MAX** | 4회 도달 | 루프 종료, 최적 반복 결과 사용 |
+
+### 개선 델타 추적
+
+루프 시작 시 추적 상태를 초기화하세요:
+
+- `warnHistory`: 각 반복의 WARN 수 배열 (예: `[3, 1, 1]`)
+- `bestIteration`: 최소 WARN을 기록한 반복 번호
+- `bestWarnCount`: 최소 WARN 수
+- `bestDocConfig`: 최소 WARN 시점의 doc-config 상태 (변경 사항)
+
+**매 반복마다**:
+1. 검증 결과에서 WARN 수를 `warnHistory`에 추가
+2. 현재 WARN 수가 `bestWarnCount`보다 작으면 `bestIteration`, `bestWarnCount`, `bestDocConfig` 갱신
+3. 조기 종료 판정:
+   - **STOP_PLATEAU**: `warnHistory` 마지막 2개 값이 동일 → 진전 없음
+   - **STOP_OSCILLATION**: `warnHistory`에서 3회 연속 방향 전환 (↑↓↑ 또는 ↓↑↓) → 진동
+4. 조기 종료가 아니면 FIX 진행
+
+### 조기 종료 시 최적 결과 복원
+
+STOP_PLATEAU, STOP_OSCILLATION, STOP_MAX 판정 시:
+
+1. 현재 반복이 `bestIteration`과 같으면 → 현재 결과 그대로 사용
+2. 현재 반복이 `bestIteration`보다 나쁘면 → `bestDocConfig`로 복원 후 1회 재변환
+3. 사용자에게 보고:
+   ```
+   조기 종료: {판정} (반복 {N}회)
+   최적 결과: 반복 {bestIteration} (WARN {bestWarnCount}건)
+   WARN 추이: {warnHistory} → 개선 정체/진동 감지
+   ```
+4. Reflexion 기록: `outcome`을 해당 판정으로 기록 (STOP_PLATEAU 등)
 
 ### FIX 시 수정 대상
 - **WARN만 자동 수정** (이미지 배치 등 명확한 문제)
@@ -425,18 +459,27 @@ ROLLBACK 발생 시 반드시 `lib/reflections.json`에 기록:
 - `reflection`: 왜 실패했는지, 어떤 수정이 과도했는지
 - `tags`에 `"anti-pattern"` 포함
 
-### 4회 초과 시
-- 자동 수정을 중단하고 사용자에게 보고
-- 남은 WARN을 나열하고 AskUserQuestion으로 선택받기:
+### 조기 종료 경험 기록
+
+STOP_PLATEAU/STOP_OSCILLATION/STOP_MAX로 종료된 경우에도 `lib/reflections.json`에 기록하세요:
+- `outcome`: "STOP_PLATEAU" / "STOP_OSCILLATION" / "STOP_MAX"
+- `context.warnHistory`: WARN 수 추이 배열
+- `reflection`: 왜 개선이 정체되었는지 분석 (어떤 WARN이 해결 불가능한지)
+
+### 루프 종료 후 사용자 선택 (WARN이 남아있을 때)
+
+STOP_PLATEAU, STOP_OSCILLATION, STOP_MAX로 종료되었고 WARN이 남아있으면:
+- WARN 추이와 조기 종료 사유를 보고
+- AskUserQuestion으로 선택받기:
 
 | 선택지 | 설명 |
 |--------|------|
-| 이대로 완료 | 현재 결과물을 최종으로 확정 |
+| 이대로 완료 | 최적 반복 결과를 최종으로 확정 |
 | 직접 피드백 | 사용자가 추가 수정사항을 직접 지시 |
 
 "직접 피드백"을 선택한 경우:
 - 사용자의 피드백을 듣고 doc-config 또는 source MD를 수정
-- 5단계를 다시 진행
+- 5단계를 다시 진행 (warnHistory 초기화)
 
 ---
 

@@ -79,11 +79,13 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 ④ 검증 (JSON 피드백)
    python -X utf8 tools/validate-docx.py output/내문서.docx --json
                     ↓
-⑤ 자가개선 루프 (최대 4회)
+⑤ 자가개선 루프 (최대 4회, 조기 종료 포함)
    ├─ WARN 0건 → 완료 (PASS)
-   ├─ WARN 있음 → doc-config 수정 → ③ 재실행 → ④ 재검증 (FIX)
+   ├─ WARN 있음 + 개선 중 → doc-config 수정 → ③ 재실행 → ④ 재검증 (FIX)
    ├─ INFO만 있음 → 완료 (SKIP, INFO는 참고용)
-   └─ 페이지 수 10%↑ → 수정 롤백 (ROLLBACK)
+   ├─ 페이지 수 10%↑ → 수정 롤백 (ROLLBACK)
+   ├─ WARN 수 변화 없음 → 조기 종료 (STOP_PLATEAU)
+   └─ WARN 수 증감 반복 → 조기 종료 (STOP_OSCILLATION)
 ```
 
 **현재 상태**: 동작함. Generic Converter + doc-config JSON으로 코드 작성 없이 문서 변환 가능.
@@ -196,6 +198,7 @@ gendocs는 **마크다운(MD)을 원본으로, 모든 형태의 비즈니스 문
 | 규칙 충돌 감지 | **완료** | `tools/check-rules.js` + regression-test 게이트 |
 | 시각적 검증 | **완료** | `tools/visual-verify.py` (LibreOffice → PDF → 이미지, 선택적) |
 | 경험 기억 (Reflexion) | **완료** | `lib/reflections.json` — 교정 경험 저장·재활용, 반복 FIX 감소 |
+| 조기 종료 + 델타 추적 | **완료** | 6단계 루프 개선: PLATEAU/OSCILLATION 감지, 최적 결과 보존 |
 
 ### Phase 3 — 포맷 확장 (v0.4)
 
@@ -715,6 +718,16 @@ python -X utf8 tools/visual-verify.py output/문서.docx --save-images
 - **매칭**: docType > tags > issue.type
 - **크기 제한**: 200개, PASS 먼저 삭제, ROLLBACK 보존
 - **승격**: 3개+ 문서 동일 tableWidths fix → patterns.json common (extract-patterns.js)
+
+### 조기 종료 (Early Termination, v0.4)
+
+레이아웃 자가개선 루프에서 무의미한 반복을 감지하고 조기 종료한다.
+
+- **STOP_PLATEAU**: 2회 연속 동일 WARN 수 → 진전 없음으로 판정
+- **STOP_OSCILLATION**: 3회 연속 WARN 수 방향 전환 (↑↓↑) → 진동으로 판정
+- **STOP_MAX**: 4회 도달 → 기존과 동일
+- **최적 복원**: 조기 종료 시 최소 WARN 반복의 doc-config로 복원 후 재변환
+- **Reflexion 기록**: 조기 종료 사유 + WARN 추이를 reflections.json에 기록
 
 ---
 
